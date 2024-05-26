@@ -38,6 +38,7 @@ public abstract class AbstractConfigRepository implements ConfigRepository {
 
   protected boolean trySync() {
     try {
+      // 调用实现类的sync方法
       sync();
       return true;
     } catch (Throwable ex) {

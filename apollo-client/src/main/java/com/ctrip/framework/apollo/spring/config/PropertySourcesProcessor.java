@@ -71,7 +71,9 @@ public class PropertySourcesProcessor implements BeanFactoryPostProcessor, Envir
   @Override
   public void postProcessBeanFactory(ConfigurableListableBeanFactory beanFactory) throws BeansException {
     this.configUtil = ApolloInjector.getInstance(ConfigUtil.class);
+    // 调用 PropertySourcesProcessor#initializePropertySources() 拉取远程 namespace 配置
     initializePropertySources();
+    // 调用 PropertySourcesProcessor#initializeAutoUpdatePropertiesFeature() 给所有缓存在本地的 Config 配置添加监听器
     initializeAutoUpdatePropertiesFeature(beanFactory);
   }
 
@@ -130,11 +132,13 @@ public class PropertySourcesProcessor implements BeanFactoryPostProcessor, Envir
       return;
     }
 
+    // 当收到配置变更回调后，会发送 ApolloConfigChangeEvent 事件
     ConfigChangeListener configChangeEventPublisher = changeEvent ->
         applicationEventPublisher.publishEvent(new ApolloConfigChangeEvent(changeEvent));
 
     List<ConfigPropertySource> configPropertySources = configPropertySourceFactory.getAllConfigPropertySources();
     for (ConfigPropertySource configPropertySource : configPropertySources) {
+      // 将配置变更监听器注册进 DefaultConfig中
       configPropertySource.addChangeListener(configChangeEventPublisher);
     }
   }

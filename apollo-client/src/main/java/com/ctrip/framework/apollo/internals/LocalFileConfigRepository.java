@@ -134,7 +134,9 @@ public class LocalFileConfigRepository extends AbstractConfigRepository
     }
     Properties newFileProperties = propertiesFactory.getPropertiesInstance();
     newFileProperties.putAll(newProperties);
+    // 将最新配置写入本地文件
     updateFileProperties(newFileProperties, m_upstream.getSourceType());
+    // 回调 DefaultConfig.onRepositoryChange 方法
     this.fireRepositoryChange(namespace, newProperties);
   }
 

@@ -34,6 +34,11 @@ public class ConfigService {
   private volatile ConfigManager m_configManager;
   private volatile ConfigRegistry m_configRegistry;
 
+  /**
+   * 通过 ApolloInjector 去获取 ConfigManager实例, ApolloInjector 其实采用了 Java 中的 ServiceLoader 机制，此处不作讨论，读者有兴趣可自行搜索
+   *
+   * @return
+   */
   private ConfigManager getManager() {
     if (m_configManager == null) {
       synchronized (this) {
@@ -68,12 +73,14 @@ public class ConfigService {
   }
 
   /**
-   * Get the config instance for the namespace.
+   * 获取名称空间的配置实例
    *
    * @param namespace the namespace of the config
    * @return config instance
    */
   public static Config getConfig(String namespace) {
+    // s_instance.getManager() 实际通过 ApolloInjector 去获取 ConfigManager实例,
+    // ApolloInjector 其实采用了 Java 中的 ServiceLoader 机制，此处不作讨论，读者有兴趣可自行搜索
     return s_instance.getManager().getConfig(namespace);
   }
 

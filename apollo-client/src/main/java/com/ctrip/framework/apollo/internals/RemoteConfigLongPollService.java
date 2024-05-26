@@ -72,13 +72,43 @@ public class RemoteConfigLongPollService {
   private static final long INIT_NOTIFICATION_ID = ConfigConsts.NOTIFICATION_ID_PLACEHOLDER;
   //90 seconds, should be longer than server side's long polling timeout, which is now 60 seconds
   private static final int LONG_POLLING_READ_TIMEOUT = 90 * 1000;
+  /**
+   * 长轮询ExecutorService
+   */
   private final ExecutorService m_longPollingService;
+  /**
+   * 是否停止长轮询的标识
+   */
   private final AtomicBoolean m_longPollingStopped;
+  /**
+   * 失败定时重试策略
+   */
   private SchedulePolicy m_longPollFailSchedulePolicyInSecond;
+  /**
+   * 长轮询的RateLimiter
+   */
   private RateLimiter m_longPollRateLimiter;
+  /**
+   * 是否长轮询已经开始的标识
+   */
   private final AtomicBoolean m_longPollStarted;
+  /**
+   * 长轮询的Namespace Multimap缓存
+   * key:namespace的名字
+   * value：RemoteConfigRepository集合
+   */
   private final Multimap<String, RemoteConfigRepository> m_longPollNamespaces;
+  /**
+   * 通知编号Map缓存
+   * key:namespace的名字
+   * value:最新的通知编号
+   */
   private final ConcurrentMap<String, Long> m_notifications;
+  /**
+   * 通知消息Map缓存
+   * key:namespace的名字
+   * value:ApolloNotificationMessages 对象
+   */
   private final Map<String, ApolloNotificationMessages> m_remoteNotificationMessages;//namespaceName -> watchedKey -> notificationId
   private Type m_responseType;
   private static final Gson GSON = new Gson();
@@ -110,15 +140,18 @@ public class RemoteConfigLongPollService {
   }
 
   public boolean submit(String namespace, RemoteConfigRepository remoteConfigRepository) {
+    // 将远程仓库缓存下来
     boolean added = m_longPollNamespaces.put(namespace, remoteConfigRepository);
     m_notifications.putIfAbsent(namespace, INIT_NOTIFICATION_ID);
     if (!m_longPollStarted.get()) {
+      // 若未启动长轮询定时任务,进行启动
       startLongPolling();
     }
     return added;
   }
 
   private void startLongPolling() {
+    // CAS设置 m_longPollStarted 为 true，代表长轮询已启动
     if (!m_longPollStarted.compareAndSet(false, true)) {
       //already started
       return;
@@ -128,7 +161,9 @@ public class RemoteConfigLongPollService {
       final String cluster = m_configUtil.getCluster();
       final String dataCenter = m_configUtil.getDataCenter();
       final String secret = m_configUtil.getAccessKeySecret();
+      // 获得长轮询任务的初始化延迟时间,单位毫秒
       final long longPollingInitialDelayInMills = m_configUtil.getLongPollingInitialDelayInMills();
+      // 提交长轮询任务 该任务会持续且循环执行
       m_longPollingService.submit(new Runnable() {
         @Override
         public void run() {
@@ -140,6 +175,7 @@ public class RemoteConfigLongPollService {
               //ignore
             }
           }
+          // 执行长轮询
           doLongPollingRefresh(appId, cluster, dataCenter, secret);
         }
       });
@@ -158,10 +194,12 @@ public class RemoteConfigLongPollService {
 
   private void doLongPollingRefresh(String appId, String cluster, String dataCenter, String secret) {
     ServiceDTO lastServiceDto = null;
+    // 循环执行,直到停止或线程中断
     while (!m_longPollingStopped.get() && !Thread.currentThread().isInterrupted()) {
       if (!m_longPollRateLimiter.tryAcquire(5, TimeUnit.SECONDS)) {
         //wait at most 5 seconds
         try {
+          // 若被限流，则等待5s
           TimeUnit.SECONDS.sleep(5);
         } catch (InterruptedException e) {
         }
@@ -169,16 +207,19 @@ public class RemoteConfigLongPollService {
       Transaction transaction = Tracer.newTransaction("Apollo.ConfigService", "pollNotification");
       String url = null;
       try {
+        // 获得Apollo Server的地址
         if (lastServiceDto == null) {
           lastServiceDto = this.resolveConfigService();
         }
 
+        // 组装长轮询通知变更的地址
         url =
             assembleLongPollRefreshUrl(lastServiceDto.getHomepageUrl(), appId, cluster, dataCenter,
                 m_notifications);
 
         logger.debug("Long polling from {}", url);
 
+        // 创建HttpRequest对象,并设置超时时间
         HttpRequest request = new HttpRequest(url);
         request.setReadTimeout(LONG_POLLING_READ_TIMEOUT);
         if (!StringUtils.isBlank(secret)) {
@@ -188,22 +229,27 @@ public class RemoteConfigLongPollService {
 
         transaction.addData("Url", url);
 
+        // 发起请求,返回HttpResponse对象
         final HttpResponse<List<ApolloConfigNotification>> response =
             m_httpClient.doGet(request, m_responseType);
 
         logger.debug("Long polling response: {}, url: {}", response.getStatusCode(), url);
+        // 有新的通知,刷新本地的缓存
         if (response.getStatusCode() == 200 && response.getBody() != null) {
           updateNotifications(response.getBody());
           updateRemoteNotifications(response.getBody());
           transaction.addData("Result", response.getBody().toString());
+          // 通知对应的RemoteConfigRepository们
           notify(lastServiceDto, response.getBody());
         }
 
         //try to load balance
+        // 无新的通知,重置连接的Config Service的地址,下次请求不同的Config Service,实现负载均衡
         if (response.getStatusCode() == 304 && ThreadLocalRandom.current().nextBoolean()) {
           lastServiceDto = null;
         }
 
+        // 标记成功
         m_longPollFailSchedulePolicyInSecond.success();
         transaction.addData("StatusCode", response.getStatusCode());
         transaction.setStatus(Transaction.SUCCESS);
@@ -232,16 +278,19 @@ public class RemoteConfigLongPollService {
     }
     for (ApolloConfigNotification notification : notifications) {
       String namespaceName = notification.getNamespaceName();
-      //create a new list to avoid ConcurrentModificationException
+      // 创建新的RemoteConfigRepository数组，避免并发问题
       List<RemoteConfigRepository> toBeNotified =
           Lists.newArrayList(m_longPollNamespaces.get(namespaceName));
+      // 获得远程的ApolloNotificationMessages对象并克隆
       ApolloNotificationMessages originalMessages = m_remoteNotificationMessages.get(namespaceName);
       ApolloNotificationMessages remoteMessages = originalMessages == null ? null : originalMessages.clone();
       //since .properties are filtered out by default, so we need to check if there is any listener for it
       toBeNotified.addAll(m_longPollNamespaces
           .get(String.format("%s.%s", namespaceName, ConfigFileFormat.Properties.getValue())));
+      // 循环RemoteConfigRepository进行通知
       for (RemoteConfigRepository remoteConfigRepository : toBeNotified) {
         try {
+          // 回调 RemoteConfigRepository.onLongPollNotified 方法，让其重新拉取最新的配置
           remoteConfigRepository.onLongPollNotified(lastServiceDto, remoteMessages);
         } catch (Throwable ex) {
           Tracer.logError(ex);

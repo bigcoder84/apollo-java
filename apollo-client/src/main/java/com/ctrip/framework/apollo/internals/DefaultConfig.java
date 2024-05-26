@@ -79,6 +79,7 @@ public class DefaultConfig extends AbstractConfig implements RepositoryChangeLis
     } finally {
       //register the change listener no matter config repository is working or not
       //so that whenever config repository is recovered, config could get changed
+      //将当前 DefaultConfig 对象 对象注册进 configRepository 更新通知列表，这样configRepository中的配置发生变更时，就会通知 DefaultConfig
       m_configRepository.addChangeListener(this);
     }
   }
@@ -217,22 +218,26 @@ public class DefaultConfig extends AbstractConfig implements RepositoryChangeLis
 
   @Override
   public synchronized void onRepositoryChange(String namespace, Properties newProperties) {
+    // 如果属性配置未发生变更，则直接退出
     if (newProperties.equals(m_configProperties.get())) {
       return;
     }
-
+    // 获取配置源类型，默认情况下 这里是 LocalFileConfigRepository
     ConfigSourceType sourceType = m_configRepository.getSourceType();
     Properties newConfigProperties = propertiesFactory.getPropertiesInstance();
     newConfigProperties.putAll(newProperties);
 
+    // 更新配置缓存，并计算实际发生变更的key， key为发生变更的配置key，value是发生变更的配置信息
     Map<String, ConfigChange> actualChanges = updateAndCalcConfigChanges(newConfigProperties,
         sourceType);
 
     //check double checked result
     if (actualChanges.isEmpty()) {
+      // 如果未发生属性变更，则直接退出
       return;
     }
 
+    // 发送 属性变更给注册的 ConfigChangeListener
     this.fireConfigChange(m_namespace, actualChanges);
 
     Tracer.logEvent("Apollo.Client.ConfigChanges", m_namespace);

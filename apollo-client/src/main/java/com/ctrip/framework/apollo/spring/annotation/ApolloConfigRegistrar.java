@@ -31,11 +31,23 @@ public class ApolloConfigRegistrar implements ImportBeanDefinitionRegistrar, Env
 
   private final ApolloConfigRegistrarHelper helper = ServiceBootstrap.loadPrimary(ApolloConfigRegistrarHelper.class);
 
+  /**
+   * 该扩展点作用是通过自定义的方式直接向容器中注册bean。实现ImportBeanDefinitionRegistrar接口，在重写的registerBeanDefinitions方法中定义的Bean，
+   * 就和使用xml中定义Bean效果是一样的。ImportBeanDefinitionRegistrar是Spring框架提供的一种机制，允许通过api代码向容器批量注册BeanDefinition。
+   * 它实现了BeanFactoryPostProcessor接口，可以在所有bean定义加载到容器之后，bean实例化之前，对bean定义进行修改。使用ImportBeanDefinitionRegistrar，
+   * 我们可以向容器中批量导入bean，而不需要在配置文件中逐个配置。
+   * @param importingClassMetadata
+   * @param registry
+   */
   @Override
   public void registerBeanDefinitions(AnnotationMetadata importingClassMetadata, BeanDefinitionRegistry registry) {
     helper.registerBeanDefinitions(importingClassMetadata, registry);
   }
 
+  /**
+   * 凡注册到Spring容器内的bean，实现了EnvironmentAware接口重写setEnvironment方法后，在工程启动时可以获得application.properties的配置文件配置的属性值
+   * @param environment
+   */
   @Override
   public void setEnvironment(Environment environment) {
     this.helper.setEnvironment(environment);

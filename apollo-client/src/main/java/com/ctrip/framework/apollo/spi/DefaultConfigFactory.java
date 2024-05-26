@@ -64,6 +64,7 @@ public class DefaultConfigFactory implements ConfigFactory {
 
   @Override
   public Config create(String namespace) {
+    // 确定本地配置缓存文件的格式。对于格式不是属性的命名空间，必须提供文件扩展名，例如application.yaml
     ConfigFileFormat format = determineFileFormat(namespace);
 
     ConfigRepository configRepository = null;
@@ -74,14 +75,18 @@ public class DefaultConfigFactory implements ConfigFactory {
     // for ConfigFileFormat.Properties
     if (ConfigFileFormat.isPropertiesCompatible(format) &&
         format != ConfigFileFormat.Properties) {
+      // 如果是YML类型的配置
       configRepository = createPropertiesCompatibleFileConfigRepository(namespace, format);
     } else {
+      // 如果是 Properties 类型的配置
       configRepository = createConfigRepository(namespace);
     }
 
     logger.debug("Created a configuration repository of type [{}] for namespace [{}]",
         configRepository.getClass().getName(), namespace);
 
+    // 创建 DefaultConfig对象，并将当前 DefaultConfig 对象 对象注册进 configRepository 更新通知列表，
+    // 这样configRepository中的配置发生变更时，就会通知 DefaultConfig
     return this.createRepositoryConfig(namespace, configRepository);
   }
 
@@ -112,6 +117,7 @@ public class DefaultConfigFactory implements ConfigFactory {
 
   ConfigRepository createConfigRepository(String namespace) {
     if (m_configUtil.isPropertyFileCacheEnabled()) {
+      // 默认是开启缓存机制的
       return createLocalConfigRepository(namespace);
     }
     return createRemoteConfigRepository(namespace);
@@ -130,6 +136,7 @@ public class DefaultConfigFactory implements ConfigFactory {
           namespace);
       return new LocalFileConfigRepository(namespace);
     }
+    // 创建 RemoteConfigRepository 和 LocalFileConfigRepository，并将 LocalFileConfigRepository 注册进 RemoteConfigRepository的变更通知列表中
     return new LocalFileConfigRepository(namespace, createRemoteConfigRepository(namespace));
   }
 

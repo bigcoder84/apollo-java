@@ -104,37 +104,45 @@ public class ApolloApplicationContextInitializer implements
   public void initialize(ConfigurableApplicationContext context) {
     ConfigurableEnvironment environment = context.getEnvironment();
 
+    // 判断是否配置了 apollo.bootstrap.enabled=true
     if (!environment.getProperty(PropertySourcesConstants.APOLLO_BOOTSTRAP_ENABLED, Boolean.class, false)) {
       logger.debug("Apollo bootstrap config is not enabled for context {}, see property: ${{}}", context, PropertySourcesConstants.APOLLO_BOOTSTRAP_ENABLED);
       return;
     }
     logger.debug("Apollo bootstrap config is enabled for context {}", context);
 
+    // 初始化，内部会加载远端Apollo Server 配置
     initialize(environment);
   }
 
 
   /**
-   * Initialize Apollo Configurations Just after environment is ready.
+   * 初始化Apollo配置
    *
    * @param environment
    */
   protected void initialize(ConfigurableEnvironment environment) {
     final ConfigUtil configUtil = ApolloInjector.getInstance(ConfigUtil.class);
     if (environment.getPropertySources().contains(PropertySourcesConstants.APOLLO_BOOTSTRAP_PROPERTY_SOURCE_NAME)) {
-      //already initialized, replay the logs that were printed before the logging system was initialized
+      // 已经初始化，重播日志系统初始化之前打印的日志
       DeferredLogger.replayTo();
       if (configUtil.isOverrideSystemProperties()) {
-        // ensure ApolloBootstrapPropertySources is still the first
+        // 确保ApolloBootstrapPropertySources仍然是第一个，如果不是会将其调整为第一个，这样从Apollo加载出来的配置拥有更高优先级
         PropertySourcesUtil.ensureBootstrapPropertyPrecedence(environment);
       }
+      // 因为有两个不同的触发点，所以该方法首先检查 Spring 的 Environment 环境中是否已经有了 key 为 ApolloBootstrapPropertySources 的目标属性，有的话就不必往下处理，直接 return
       return;
     }
 
+    // 获取配置的命名空间参数
     String namespaces = environment.getProperty(PropertySourcesConstants.APOLLO_BOOTSTRAP_NAMESPACES, ConfigConsts.NAMESPACE_APPLICATION);
     logger.debug("Apollo bootstrap namespaces: {}", namespaces);
+    // 使用","切分命名参数
     List<String> namespaceList = NAMESPACE_SPLITTER.splitToList(namespaces);
 
+    // 创建 `CompositePropertySource` 复合属性源，因为 apollo-client 启动时可以加载多个命名空间的配置，每个namespace对应一个 `PropertySource`，
+    // 而多个 `PropertySource` 就会被封装在 `CompositePropertySource` 对象中，若需要获取apollo中配置的属性时，就会遍历多个命名空间所对应的 `PropertySource`，
+    // 找到对应属性后就会直接返回，这也意味着，先加载的namespace配置具有更高优先级
     CompositePropertySource composite;
     if (configUtil.isPropertyNamesCacheEnabled()) {
       composite = new CachedCompositePropertySource(PropertySourcesConstants.APOLLO_BOOTSTRAP_PROPERTY_SOURCE_NAME);
@@ -142,8 +150,10 @@ public class ApolloApplicationContextInitializer implements
       composite = new CompositePropertySource(PropertySourcesConstants.APOLLO_BOOTSTRAP_PROPERTY_SOURCE_NAME);
     }
     for (String namespace : namespaceList) {
+      // 从远端拉去命名空间对应的配置
       Config config = ConfigService.getConfig(namespace);
-
+      // 调用ConfigPropertySourceFactory#getConfigPropertySource() 缓存从远端拉取的配置，并将其包装为 PropertySource，
+      // 最终将所有拉取到的远端配置聚合到一个以 ApolloBootstrapPropertySources 为 key 的属性源包装类 CompositePropertySource 的内部
       composite.addPropertySource(configPropertySourceFactory.getConfigPropertySource(namespace, config));
     }
     if (!configUtil.isOverrideSystemProperties()) {
@@ -152,6 +162,8 @@ public class ApolloApplicationContextInitializer implements
         return;
       }
     }
+    // 将 CompositePropertySource 属性源包装类添加到 Spring 的 Environment 环境中，注意是插入在属性源列表的头部，
+    // 因为取属性的时候其实是遍历这个属性源列表来查找，找到即返回，所以出现同名属性时，前面的优先级更高
     environment.getPropertySources().addFirst(composite);
   }
 
@@ -182,7 +194,8 @@ public class ApolloApplicationContextInitializer implements
    *
    * In order to load Apollo configurations as early as even before Spring loading logging system phase,
    * this EnvironmentPostProcessor can be called Just After ConfigFileApplicationListener has succeeded.
-   *
+   * 为了早在Spring加载日志系统阶段之前就加载Apollo配置，这个EnvironmentPostProcessor可以在ConfigFileApplicationListener成功之后调用。
+   * 处理顺序是这样的: 加载Bootstrap属性和应用程序属性----->加载Apollo配置属性---->初始化日志系
    * <br />
    * The processing sequence would be like this: <br />
    * Load Bootstrap properties and application properties -----> load Apollo configuration properties ----> Initialize Logging systems
@@ -196,17 +209,21 @@ public class ApolloApplicationContextInitializer implements
     // should always initialize system properties like app.id in the first place
     initializeSystemProperty(configurableEnvironment);
 
+    // 获取 apollo.bootstrap.eagerLoad.enabled 配置
     Boolean eagerLoadEnabled = configurableEnvironment.getProperty(PropertySourcesConstants.APOLLO_BOOTSTRAP_EAGER_LOAD_ENABLED, Boolean.class, false);
 
     //EnvironmentPostProcessor should not be triggered if you don't want Apollo Loading before Logging System Initialization
     if (!eagerLoadEnabled) {
+      // 如果未开启提前加载，则 postProcessEnvironment 扩展点直接返回，不加载配置
       return;
     }
 
+    // 是否开启了 apollo.bootstrap.enabled 参数，只有开启了才会在Spring启动阶段加载配置
     Boolean bootstrapEnabled = configurableEnvironment.getProperty(PropertySourcesConstants.APOLLO_BOOTSTRAP_ENABLED, Boolean.class, false);
 
     if (bootstrapEnabled) {
       DeferredLogger.enable();
+      // 执行初始化操作，内部会加载Apollo Server配置
       initialize(configurableEnvironment);
     }
 

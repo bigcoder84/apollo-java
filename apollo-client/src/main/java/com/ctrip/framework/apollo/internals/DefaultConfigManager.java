@@ -41,16 +41,19 @@ public class DefaultConfigManager implements ConfigManager {
 
   @Override
   public Config getConfig(String namespace) {
+    // 首先从缓存中获取配置，缓存中没有则从远程拉取，注意此处在 synchronized 代码块内部也判了一次空，采用了双重检查锁机制
     Config config = m_configs.get(namespace);
 
     if (config == null) {
       synchronized (this) {
         config = m_configs.get(namespace);
-
+        // 加锁后再次判断
         if (config == null) {
+          // 远程拉取配置首先需要通过 ConfigFactoryManager#getFactory() 方法获取 ConfigFactory 实例
           ConfigFactory factory = m_factoryManager.getFactory(namespace);
-
+          // 再通过 ConfigFactory#create() 去实际地进行拉取操作。此处 Factory 的创建也使用了 ServiceLoader 机制，暂不讨论，可知最后实际调用到 DefaultConfigFactory#create()
           config = factory.create(namespace);
+          // 将从远端拉取到的配置缓存
           m_configs.put(namespace, config);
         }
       }

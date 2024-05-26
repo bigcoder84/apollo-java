@@ -54,12 +54,17 @@ public class DefaultApolloConfigRegistrarHelper implements ApolloConfigRegistrar
     // to make sure the default PropertySourcesPlaceholderConfigurer's priority is higher than PropertyPlaceholderConfigurer
     propertySourcesPlaceholderPropertyValues.put("order", 0);
 
+    // PropertySourcesPlaceholderConfigurer是 SpringBoot 框架自身的占位符处理配置，占位符的处理主要是将 ${apollo.value} 这样的字符串解析出 关键字 apollo.value，再使用这个 key 通过 PropertySourcesPropertyResolver 从 PropertySource 中找到对应的属性值替换掉占位符
     BeanRegistrationUtil.registerBeanDefinitionIfNotExists(registry, PropertySourcesPlaceholderConfigurer.class,
             propertySourcesPlaceholderPropertyValues);
     BeanRegistrationUtil.registerBeanDefinitionIfNotExists(registry, AutoUpdateConfigChangeListener.class);
+    // 用于拉取 @EnableApolloConfig 配置的 namespace 的远程配置
     BeanRegistrationUtil.registerBeanDefinitionIfNotExists(registry, PropertySourcesProcessor.class);
+    // 用于处理 Apollo 的专用注解
     BeanRegistrationUtil.registerBeanDefinitionIfNotExists(registry, ApolloAnnotationProcessor.class);
+    // 用于处理 @Value 注解标注的类成员变量和对象方法
     BeanRegistrationUtil.registerBeanDefinitionIfNotExists(registry, SpringValueProcessor.class);
+    // 用于处理 XML 文件中的占位符
     BeanRegistrationUtil.registerBeanDefinitionIfNotExists(registry, SpringValueDefinitionProcessor.class);
   }
 

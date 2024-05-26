@@ -26,8 +26,10 @@ public class ConfigPropertySourceFactory {
   private final List<ConfigPropertySource> configPropertySources = Lists.newLinkedList();
 
   public ConfigPropertySource getConfigPropertySource(String name, Config source) {
+    // 将 Apollo 的 Config 配置封装为继承自 Spring 内置的 EnumerablePropertySource 类的 ConfigPropertySource 对象
     ConfigPropertySource configPropertySource = new ConfigPropertySource(name, source);
 
+    // 将新生成的 ConfigPropertySource 对象缓存到内部列表，以备后续为每个配置实例添加配置变化监听器使用
     configPropertySources.add(configPropertySource);
 
     return configPropertySource;
